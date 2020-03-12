@@ -1,0 +1,380 @@
+<html>
+
+<head>
+<meta http-equiv="content-type" content="text/html; charset=utf-8">
+<meta name="author" content="Alexandros Frantzis">
+<title>Interactive time series graph of confirmed COVID-19 cases per country</title>
+
+<style>
+    .legendLayer .background {
+        fill: rgba(255, 255, 255, 0.85);
+        stroke: rgba(0, 0, 0, 0.85);
+        stroke-width: 1;
+    }
+    #graph-container {
+        display:flex;
+        flex-wrap: wrap;
+        height: 80%;
+        width: 90%;
+        padding: 3%;
+    }
+    #graph {
+        width: 75%;
+        height: 80%;
+        min-width: 300px;
+    }
+    #options-container {
+        display:flex;
+        flex-direction: column;
+        width: 25%;
+        height: 80%;
+    }
+    @media (max-aspect-ratio: 1/1) {
+        #graph {
+            width: 100%;
+            height: 50%;
+            min-width: 300px;
+        }
+        #options-container {
+            display:flex;
+            flex-direction: column;
+            width: 100%;
+            height: 25%;
+        }
+    }
+    #choices {
+        height: 100%;
+    }
+    #choices-container {
+        padding: 2.5% 0% 0 2.5%;
+        height: 90%;
+    }
+    #sync-container {
+        display:flex;
+        flex-direction: row;
+        padding: 1.5% 0 1.5% 2.5%;
+        justify-content: left;
+    }
+</style>
+
+<script src="https://code.jquery.com/jquery-3.4.1.min.js"></script>
+<script src="jquery.flot-4.2.0.min.js"></script>
+
+<script type="text/javascript">
+
+(async () => {
+
+const data_url="https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_19-covid-Confirmed.csv";
+
+// Parse the CSV file and return a Map of the region time series.
+// Note that this is a very rudimentary CSV parser, and relies on
+// a couple of hacks to get the data correctly (e.g., special
+// handling of quoted province/state names).
+function parse_csv(csv) {
+    const lines = csv.split('\n');
+
+    // First line contains the header, including the dates, which are MM/DD/YY.
+    // Flot needs them as milliseconds since epoch.
+    const dates = lines[0].trim().split(',').slice(4).map(item => {
+        const s = item.split('/');
+        const y = 2000 + Number(s[2]);
+        const m = Number(s[0]) - 1;
+        const d = Number(s[1]);
+        return Date.UTC(y, m, d);
+    });
+
+    var datasets = new Map();
+    for (var i = 1; i < lines.length; i++) {
+        var elems = lines[i].trim().split(',');
+        if (elems.length < 4) {
+            continue;
+        }
+        // The first column contains the province/state name and may contain
+        // one comma. In that case it's quoted, so check for it and merge it
+        // with the next column.
+        if (elems[0].startsWith('"')) {
+            elems.splice(0, 2, elems[0].slice(1) + ", " + elems[1].slice(0,-1));
+        }
+        // Similarly, the second column contains the region/country name and may contain
+        // one comma. In that case it's quoted, so check for it and merge it
+        // with the next column.
+        if (elems[1].startsWith('"')) {
+            elems.splice(1, 2, elems[1].slice(1) + ", " + elems[2].slice(0,-1));
+        }
+        // Create the plot data by combining [x,y] from [date, region case count].
+        const data = elems.slice(4).map((item, index) => [dates[index], Number(item)]);
+        const label = elems[1];
+        // Accumulate case counts from provinces/states in the same region.
+        if (datasets.has(label)) {
+            var series = datasets.get(label);
+            series.data.forEach((item, index) => item[1] += data[index][1]);
+        } else {
+            datasets.set(label, {label: label, data: data});
+        }
+    }
+
+    return new Map([...datasets.entries()].sort());
+}
+
+async function download_csv(url) {
+    const response = await fetch(url);
+    const csv = await response.text();
+    return csv;
+}
+
+const csv = await download_csv(data_url);
+const datasets = parse_csv(csv);
+
+// Set colors for all the region series. Since 47 and 360 are relative prime,
+// h will traverse the whole range [0, 360) before producing duplicates.
+let h = 0;
+datasets.forEach((series, label, map) => {
+    series.color = 'hsla(' + h + ', 50%, 50%, 1)';
+    h = (h + 47) % 360;
+});
+
+// Add options for all region series.
+datasets.forEach((series, label, map) => {
+    var key = series.label;
+    $("#choices").append("<option value='" + key + "'>" + key + "</option>");
+});
+
+// Handlers for UI events.
+$("#choices").on("change", plotAccordingToChoices);
+
+$("input[type=radio][name=sync]").on("change", () => {
+    if ($("#sync_manual").is(":checked")) {
+        $("#sync_value").removeAttr("disabled");
+    } else {
+        $("#sync_value").attr("disabled", true);
+    }
+
+    plotAccordingToChoices();
+});
+
+$("#sync_value").on("change", plotAccordingToChoices);
+
+$("#graph").bind("plothover", function (event, pos, item) {
+    if (!pos.x || !pos.y) {
+        return;
+    }
+
+    if (item) {
+        if ($("#sync_none").is(":checked")) {
+            const date = new Date(item.datapoint[0]).toISOString().split('T')[0];
+            const num = item.datapoint[1];
+            $("#tooltip").html(item.series.label + ": " + num + " on " + date)
+                .css({top: item.pageY+5, left: item.pageX+5})
+                .fadeIn(200);
+        } else if ($("#sync_manual").is(":checked")) {
+            const offset = item.datapoint[0];
+            const num = item.datapoint[1];
+            $("#tooltip").html(item.series.label + ": " + num + " on +" + offset + " days ")
+                .css({top: item.pageY+5, left: item.pageX+5})
+                .fadeIn(200);
+        } else {
+            const num = item.datapoint[1];
+            $("#tooltip").html(item.series.label + ": " + num)
+                .css({top: item.pageY+5, left: item.pageX+5})
+                .fadeIn(200);
+        }
+    } else {
+        $("#tooltip").hide();
+    }
+});
+
+$("#graph").bind("plothovercleanup", function (event, pos, item) {
+    $("#tooltip").hide();
+});
+
+// Score how well too time series match
+function score_series_match(series_ref, series) {
+    const l = Math.min(series_ref.data.length, series.data.length);
+    var score = 0;
+    for (var m = 0; m < l; m++) {
+        const d_ref = series_ref.data[m][1];
+        const d = series.data[m][1];
+        const diff = Math.abs(d - d_ref);
+        const diff_pct = diff / (d_ref + 1 * (d_ref == 0));
+
+        // Scale exponentially how good the match (i.e., diff_pct) is from
+        // 1.0 (low diff_pct) to 0.0 (high diff_pct).
+        const match = 1 / Math.pow(10, 3 * diff_pct);
+        // Matching lower values should not be as important as matching higher ones,
+        // so scale a penalty exponentially from 1.0 (low values) to 0.0 (big values).
+        const penalty = 1 / Math.pow(1.05, d_ref);
+        if (match > penalty)
+            score += match - penalty;
+    }
+
+    return score;
+}
+
+// Calculate how match a series needs to be shifted left to best match another
+// reference series.
+function calc_sync_series_shift_left(series_ref, series) {
+    const l = series_ref.data.length;
+    const scores = [];
+
+    for (var n = 0; n < l; n++) {
+        var shifted = $.extend({}, series);
+        shifted.data = series.data.slice(n);
+
+        const score = score_series_match(series_ref, shifted);
+        scores.push(score);
+    }
+
+    return [scores.indexOf(Math.max(...scores)), Math.max(...scores)];
+}
+
+// Main plot functions that takes into accounts all user choices.
+function plotAccordingToChoices() {
+    var data = [];
+
+    // Create plot data from all selected region datasets.
+    $("#choices").find("option:selected").each(function () {
+        const key = $(this).attr("value");
+        if (key && datasets.has(key)) {
+            data.push(datasets.get(key));
+        }
+    });
+
+    if ($("#sync_manual").is(":checked")) {
+        const sync_value = $("#sync_value").val();
+        // Find the series with the sync value most to the left, and make
+        // this the reference series. All other series will be moved left towards
+        // it.
+        const sync_indices = data.map(series => {
+            var index = series.data.findIndex(item => item[1] >= sync_value);
+            if (index == -1)
+                index = series.data.length - 1;
+            return index;
+        });
+        const ref_index = sync_indices.indexOf(Math.min(...sync_indices));
+
+        // Shift the series to synchronize them at the specified sync value,
+        // and replace the timestamps in the data points with offsets from that
+        // sync point.
+        data.forEach((series, i) => {
+            const shift = sync_indices[i] - sync_indices[ref_index];
+            var shifted = series.data.slice(shift);
+            data[i] = {
+                label: series.label + (shift > 0 ? " (shifted left " + shift + " days)" : ""),
+                color: series.color,
+                data: shifted.map((item, index) => [index - sync_indices[ref_index], item[1]])
+            };
+        });
+    }
+
+    if ($("#sync_auto").is(":checked")) {
+        // Find which series can be the best references series, i.e., the one that
+        // gives us the best total match score against all others.
+        const scores =
+            data.map(series_ref =>
+                data.filter(series => series != series_ref)
+                    .map(series => calc_sync_series_shift_left(series_ref, series)[1])
+                .reduce((a,b) => a+b , 0));
+        const ref_index = scores.indexOf(Math.max(...scores));
+
+        // Shift each series to get the best synchronization with the reference series.
+        data.forEach((series, i) => {
+            const [shift, score] = calc_sync_series_shift_left(data[ref_index], series);
+            var shifted = series.data.slice(shift);
+            data[i] = {
+                label: series.label + (shift > 0 ? " (shifted left " + shift + " days)" : ""),
+                color: series.color,
+                data: shifted.map((item, index) => [index , item[1]])
+            };
+        });
+    }
+
+    plot_options = {
+        legend: {
+            show: true,
+            position: "nw",
+        },
+        series: {
+            lines: { show: true },
+            points: { show: true },
+        },
+        grid: {
+            hoverable: true,
+            clickable: true,
+        },
+    }
+
+    if ($("#sync_none").is(":checked")) {
+        plot_options["xaxis"] = {
+            mode: "time",
+            timeBase: "milliseconds",
+            timeformat: "%Y-%m-%d",
+        };
+    }
+
+    $.plot($("#graph"), data, plot_options);
+}
+
+plotAccordingToChoices();
+
+})();
+</script>
+
+</head>
+
+<body>
+    <h2 align="center">Interactive time series graph of confirmed COVID-19 cases per country</h2>
+
+    <p> Select one or multiple (with Ctrl/Command + click) countries from the list
+    to plot the time series of confirmed COVID-19 cases in those countries. </p>
+
+    <p> Select "Automatic synchronization" to synchronize the time series by automatically
+    shifting them to get the best trend match.
+    </p>
+
+    <p> Select "Synchronize series at" to synchronize the series at the specified number of
+    cases. </p>
+
+    <p>
+    The COVID-19 data is taken from the <a href="https://github.com/CSSEGISandData/COVID-19">John Hopkins CSSE repository</a>
+    and is subject to the terms of use as stated in that repository.
+    </p>
+
+
+    <div id="graph-container">
+        <div id="graph"></div>
+        <div id="options-container">
+            <div id="sync-container">
+                <input type="radio" name="sync" id="sync_none" checked>
+                <label for="sync_auto">No synchronization</label>
+            </div>
+            <div id="sync-container">
+                <input type="radio" name="sync" id="sync_auto">
+                <label for="sync_auto">Automatic synchronization</label>
+            </div>
+            <div id="sync-container">
+                <input type="radio" name="sync" id="sync_manual">
+                <label for="sync_value">Synchronize series at:</label>
+                <input type="number" id="sync_value" style="width: 5em" min="0" disabled="true" value="25">
+            </div>
+            <div id="choices-container">
+                <select id="choices" multiple="true"></select>
+            </div>
+        </div>
+	</div>
+
+    <div id='tooltip'
+         style="position: absolute; display: none; border: 1px solid #fdd; padding: 2px;
+                background-color: #fee; opacity: 0.80">
+    </div>
+
+    <div align="center">
+        <a rel="license" href="http://creativecommons.org/licenses/by-sa/4.0/">
+            <img alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by-sa/4.0/88x31.png" />
+        </a>
+        <br/>
+        This page is Copyright 2020 Alexandros Frantzis, licensed under a <a rel="license" href="http://creativecommons.org/licenses/by-sa/4.0/">Creative Commons Attribution-ShareAlike 4.0 International License</a>.
+        <br/>
+        The COVID-19 data is Copyright 2020 Johns Hopkins University.
+    </div>
+</body>
+</html>

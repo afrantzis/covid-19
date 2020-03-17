@@ -5,8 +5,11 @@ graph of confirmed COVID-19 cases per country. It works completely on the
 client side (with embedded javascript) and dynamically downloads the latest data
 from the [John Hopkins CSSE repository](https://github.com/CSSEGISandData/COVID-19).
 
-It supports both automatic and manual synchronization of the displayed time series
-to help compare trends.
+The graph can display either the total number of cases, the number of new cases
+per day, or the growth ratio of the total cases per day.
+
+The page supports both automatic and manual synchronization of the displayed
+time series to help compare trends.
 
 To use this page clone the repo and point your browser to the contained index.html
 file.

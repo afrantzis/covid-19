@@ -38,18 +38,16 @@
         #options-container {
             display:flex;
             flex-direction: column;
+            flex-wrap: wrap;
             width: 100%;
             height: 25%;
         }
     }
-    #choices {
-        height: 100%;
+    .column-container {
+        display:flex;
+        flex-direction: column;
     }
-    #choices-container {
-        padding: 2.5% 0% 0 2.5%;
-        height: 90%;
-    }
-    #sync-container {
+    .row-container {
         display:flex;
         flex-direction: row;
         padding: 1.5% 0 1.5% 2.5%;
@@ -154,6 +152,10 @@ $("input[type=radio][name=sync]").on("change", () => {
 
 $("#sync_value").on("change", plotAccordingToChoices);
 
+$("input[type=radio][name=mode]").on("change", () => {
+    plotAccordingToChoices();
+});
+
 $("#graph").bind("plothover", function (event, pos, item) {
     if (!pos.x || !pos.y) {
         return;
@@ -238,6 +240,22 @@ function plotAccordingToChoices() {
             data.push(datasets.get(key));
         }
     });
+
+    if ($("#mode_per_day").is(":checked")) {
+        data.forEach((series,i) => {
+            var diffs = series.data.slice(1).map((x,i) => [x[0], x[1] - series.data[i][1]]);
+            diffs.unshift(series.data[0]);
+            data[i] = Object.assign({}, data[i], {data: diffs});
+        });
+    }
+
+    if ($("#mode_growth_ratio").is(":checked")) {
+        data.forEach((series,i) => {
+            var pct = series.data.slice(1).map((x,i) => [x[0], x[1] / series.data[i][1]]);
+            pct.unshift([series.data[0][0], NaN]);
+            data[i] = Object.assign({}, data[i], {data: pct});
+        });
+    }
 
     if ($("#sync_manual").is(":checked")) {
         const sync_value = $("#sync_value").val();
@@ -327,12 +345,14 @@ plotAccordingToChoices();
     <p> Select one or multiple (with Ctrl/Command + click) countries from the list
     to plot the time series of confirmed COVID-19 cases in those countries. </p>
 
-    <p> Select "Automatic synchronization" to synchronize the time series by automatically
-    shifting them to get the best trend match.
-    </p>
+    <p> Select what to display in the graph: either the <b>Total cases</b>, or
+    the <b>New cases per day</b> or the <b>Growth ratio of total cases per
+    day</b>.  </p>
 
-    <p> Select "Synchronize series at" to synchronize the series at the specified number of
-    cases. </p>
+    <p> Select the synchronization mode: <b>Automatic synchronization</b> to
+    synchronize the time series by automatically shifting them to get the best
+    trend match, or <b>Synchronize series at</b> to synchronize the series at the
+    specified number of cases.</p>
 
     <p>
     The COVID-19 data is taken from the <a href="https://github.com/CSSEGISandData/COVID-19">John Hopkins CSSE repository</a>
@@ -343,24 +363,51 @@ plotAccordingToChoices();
     <div id="graph-container">
         <div id="graph"></div>
         <div id="options-container">
-            <div id="sync-container">
-                <input type="radio" name="sync" id="sync_none" checked>
-                <label for="sync_auto">No synchronization</label>
+            <div class="column-container">
+                <div class="row-container">
+                    <b>Data display mode</b>
+                </div>
+                <div class="row-container">
+                    <input type="radio" name="mode" id="mode_total" checked>
+                    <label for="mode_total">Total cases</label>
+                </div>
+                <div class="row-container">
+                    <input type="radio" name="mode" id="mode_per_day">
+                    <label for="mode_per_day">New cases per day</label>
+                </div>
+                <div class="row-container">
+                    <input type="radio" name="mode" id="mode_growth_ratio">
+                    <label for="mode_growth_ratio">Growth ratio of total cases per day</label>
+                </div>
             </div>
-            <div id="sync-container">
-                <input type="radio" name="sync" id="sync_auto">
-                <label for="sync_auto">Automatic synchronization</label>
+            <div class="column-container">
+                <div class="row-container">
+                    <b>Synchronization</b>
+                </div>
+                <div class="row-container">
+                    <input type="radio" name="sync" id="sync_none" checked>
+                    <label for="sync_none">No synchronization</label>
+                </div>
+                <div class="row-container">
+                    <input type="radio" name="sync" id="sync_auto">
+                    <label for="sync_auto">Automatic synchronization</label>
+                </div>
+                <div class="row-container">
+                    <input type="radio" name="sync" id="sync_manual">
+                    <label for="sync_value">Synchronize series at:</label>
+                    <input type="number" id="sync_value" style="width: 5em" min="0" disabled="true" value="25">
+                </div>
             </div>
-            <div id="sync-container">
-                <input type="radio" name="sync" id="sync_manual">
-                <label for="sync_value">Synchronize series at:</label>
-                <input type="number" id="sync_value" style="width: 5em" min="0" disabled="true" value="25">
-            </div>
-            <div id="choices-container">
-                <select id="choices" multiple="true"></select>
+            <div class="column-container" style="height: 100%">
+                <div class="row-container">
+                    <b>Countries</b>
+                </div>
+                <div class="row-container" style="height: 100%">
+                    <select id="choices" multiple="true" style="height: 100%"></select>
+                </div>
             </div>
         </div>
-	</div>
+    </div>
 
     <div id='tooltip'
          style="position: absolute; display: none; border: 1px solid #fdd; padding: 2px;

@@ -156,6 +156,10 @@ $("input[type=radio][name=mode]").on("change", () => {
     plotAccordingToChoices();
 });
 
+$("input[type=radio][name=yaxis]").on("change", () => {
+    plotAccordingToChoices();
+});
+
 $("#graph").bind("plothover", function (event, pos, item) {
     if (!pos.x || !pos.y) {
         return;
@@ -329,6 +333,13 @@ function plotAccordingToChoices() {
         };
     }
 
+    if ($("#yaxis_logarithmic").is(":checked")) {
+        plot_options["yaxis"] = {
+            mode: "log",
+            showTickLabels: "all",
+        };
+    }
+
     $.plot($("#graph"), data, plot_options);
 }
 
@@ -378,6 +389,19 @@ plotAccordingToChoices();
                 <div class="row-container">
                     <input type="radio" name="mode" id="mode_growth_ratio">
                     <label for="mode_growth_ratio">Growth ratio of total cases per day</label>
+                </div>
+            </div>
+            <div class="column-container">
+                <div class="row-container">
+                    <b>Y-axis scale</b>
+                </div>
+                <div class="row-container">
+                    <input type="radio" name="yaxis" id="yaxis_linear" checked>
+                    <label for="yaxis_linear">Linear</label>
+                </div>
+                <div class="row-container">
+                    <input type="radio" name="yaxis" id="yaxis_logarithmic">
+                    <label for="yaxis_logarithmic">Logarithmic</label>
                 </div>
             </div>
             <div class="column-container">
